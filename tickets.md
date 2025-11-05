@@ -13,7 +13,22 @@
 **Assignee**: sj@cypherlab.tech
 **Dependencies**: ⬆️ ENG-74 (odds-optimizer) + ENG-86 (wallet), ⬇️ ENG-78 (order-validator)
 
-## Tickets to Create
-1. **[NEW] Implement Order Matching Engine (P0 - CRITICAL)** - Core functionality missing
-2. **[NEW] Add Order Book State Persistence (P0)** - StatefulSet requires persistent state
-3. **[NEW] Add Fair Queuing and Priority Logic (P1)** - Order fairness
+## Proposed New Tickets (Created in Asana)
+
+### 2. Implement Order Matching Engine
+**Task ID**: 1211847642479560
+**ENG**: Pending assignment
+**URL**: https://app.asana.com/0/1211254851871080/1211847642479560
+**Priority**: P0 - CRITICAL
+
+### 3. Add Order Book State Persistence
+**Task ID**: 1211847560499861
+**ENG**: Pending assignment
+**URL**: https://app.asana.com/0/1211254851871080/1211847560499861
+**Priority**: P0
+
+### 4. Add Fair Queuing and Priority Logic
+**Task ID**: 1211847558398191
+**ENG**: Pending assignment
+**URL**: https://app.asana.com/0/1211254851871080/1211847558398191
+**Priority**: P1
