@@ -24,6 +24,7 @@ import (
 	"github.com/cypherlabdev/order-book-service/internal/observability"
 	"github.com/cypherlabdev/order-book-service/internal/repository"
 	"github.com/cypherlabdev/order-book-service/internal/service"
+	"github.com/cypherlabdev/order-book-service/pkg/matchingengine"
 	orderbookv1 "github.com/cypherlabdev/cypherlabdev-protos/gen/go/orderbook/v1"
 )
 
@@ -79,12 +80,19 @@ func main() {
 	outboxRepo := repository.NewPostgresOutboxRepository(dbPool, logger)
 	idempotencyRepo := repository.NewPostgresIdempotencyRepository(dbPool, logger)
 
+	// 7a. Initialize matching engine
+	// In production, you would have one engine per market/selection pair
+	// For now, initialize a single engine for demonstration
+	matchingEngine := matchingengine.NewEngine("default-market", "default-selection")
+	logger.Info().Msg("matching engine initialized")
+
 	// 8. Initialize service layer
 	orderService := service.NewOrderService(
 		dbPool,
 		orderRepo,
 		outboxRepo,
 		idempotencyRepo,
+		matchingEngine,
 		metrics,
 		logger,
 	)

@@ -9,6 +9,7 @@ import (
 	"github.com/cypherlabdev/order-book-service/internal/models"
 	"github.com/cypherlabdev/order-book-service/internal/observability"
 	"github.com/cypherlabdev/order-book-service/internal/repository"
+	"github.com/cypherlabdev/order-book-service/pkg/matchingengine"
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
@@ -21,6 +22,7 @@ type OrderServiceImpl struct {
 	orderRepo       repository.OrderRepository
 	outboxRepo      repository.OutboxRepository
 	idempotencyRepo repository.IdempotencyRepository
+	matchingEngine  *matchingengine.Engine
 	metrics         *observability.Metrics
 	logger          zerolog.Logger
 	validator       *validator.Validate
@@ -32,6 +34,7 @@ func NewOrderService(
 	orderRepo repository.OrderRepository,
 	outboxRepo repository.OutboxRepository,
 	idempotencyRepo repository.IdempotencyRepository,
+	matchingEngine *matchingengine.Engine,
 	metrics *observability.Metrics,
 	logger zerolog.Logger,
 ) OrderService {
@@ -40,6 +43,7 @@ func NewOrderService(
 		orderRepo:       orderRepo,
 		outboxRepo:      outboxRepo,
 		idempotencyRepo: idempotencyRepo,
+		matchingEngine:  matchingEngine,
 		metrics:         metrics,
 		logger:          logger.With().Str("component", "order_service").Logger(),
 		validator:       validator.New(),
@@ -128,6 +132,47 @@ func (s *OrderServiceImpl) PlaceOrder(ctx context.Context, req *PlaceOrderReques
 		return nil, fmt.Errorf("failed to create order: %w", err)
 	}
 
+	// Attempt to match order using matching engine
+	matches, err := s.matchingEngine.PlaceOrder(order)
+	if err != nil {
+		return nil, fmt.Errorf("matching engine error: %w", err)
+	}
+
+	// Process matches and persist to database
+	for _, match := range matches {
+		// Insert match record
+		if err := s.orderRepo.CreateMatch(ctx, tx, match); err != nil {
+			return nil, fmt.Errorf("failed to create match: %w", err)
+		}
+
+		// Create outbox event for match
+		matchEventPayload := map[string]interface{}{
+			"match_id":       match.ID.String(),
+			"back_order_id":  match.BackOrderID.String(),
+			"lay_order_id":   match.LayOrderID.String(),
+			"matched_size":   match.Size.String(),
+			"matched_price":  match.Price.String(),
+			"matched_at":     match.MatchedAt.Format(time.RFC3339),
+		}
+
+		matchOutboxEvent := &models.OutboxEvent{
+			AggregateID:   match.ID,
+			AggregateType: "match",
+			EventType:     "bet.matched",
+			EventPayload:  matchEventPayload,
+			SagaID:        req.SagaID,
+		}
+
+		if err := s.outboxRepo.Create(ctx, tx, matchOutboxEvent); err != nil {
+			return nil, fmt.Errorf("failed to insert match outbox event: %w", err)
+		}
+	}
+
+	// Update order in database with final status after matching
+	if err := s.orderRepo.Update(ctx, tx, order); err != nil {
+		return nil, fmt.Errorf("failed to update order after matching: %w", err)
+	}
+
 	// Create outbox event for order.placed
 	eventPayload := map[string]interface{}{
 		"order_id":         order.ID.String(),
@@ -140,6 +185,9 @@ func (s *OrderServiceImpl) PlaceOrder(ctx context.Context, req *PlaceOrderReques
 		"potential_payout": potentialPayout.String(),
 		"reservation_id":   order.ReservationID,
 		"placed_at":        order.PlacedAt.Format(time.RFC3339),
+		"status":           string(order.Status),
+		"size_matched":     order.SizeMatched.String(),
+		"matches_count":    len(matches),
 	}
 
 	outboxEvent := &models.OutboxEvent{
